@@ -1,0 +1,15 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "liteql"
+version = "0.1.0"
+description = "Lightweight SQL wrapper for SQLite and MySQL"
+readme = "README.md"
+requires-python = ">=3.14"
+license = "MIT"
+dependencies = []
+
+[project.optional-dependencies]
+mysql = ["PyMySQL"]
