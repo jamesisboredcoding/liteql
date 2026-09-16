@@ -1,14 +1,13 @@
 import sqlite3
 import json
 
-import datetime
-
 from urllib.parse import urlparse, unquote
 from typing import Dict, List
 
 from .dialects import _dialect, SQLITE
 from .errors import LiteQLConnectionError, LiteQLQueryError
 from .attributes import LiteQLDatatype
+from .operations import LiteQLOperation, BETWEEN
 
 class LiteQLTable:
     """LiteQL table object"""
@@ -45,10 +44,29 @@ class LiteQLTable:
         except sqlite3.OperationalError as err:
             raise LiteQLQueryError(err)
 
+    def _build_select(self, select, **where):
+        where_str = "WHERE"
+        conditions = []
+
+        for key in where:
+            condition = where[key]
+            match condition:
+                case str(): conditions.append(f"{key} = '{condition}'")
+                case int(): conditions.append(f"{key} = {condition}")
+                case LiteQLOperation(): conditions.append(f"{key} {condition} {condition.value}")
+                case _: conditions.append(f"{key} {condition}")
+
+        joined = " AND ".join(conditions)
+        where_str += " " + joined
+
+        sql = f"SELECT {"*" if not select else ", ".join(select)} FROM {self.name} {where_str if where else ""}"
+        return sql
+
     def find_one(self, select: None | list = None, **where) -> tuple | None:
-        """Runs a SELECT SQL query with query paramaters
+        """Runs a SELECT SQL query with query paramaters and returns one result
         
         Args:
+            select: List of columns to retrieve
             **where: Keys represent columns and valeus represent their values
 
         Example:
@@ -58,27 +76,31 @@ class LiteQLTable:
             1
         """
 
-        if select:
-            for col in select:
-                if col not in self.schema.keys():
-                    raise LiteQLQueryError(f"Column {col} does not exist in table {self.name}")
-
-        where_str = "WHERE"
-        conditions = []
-
-        for key in where:
-            condition = where[key]
-            match condition:
-                case str(): conditions.append(f"{key}='{condition}'")
-                case int(): conditions.append(f"{key}={condition}")
-
-        joined = " AND ".join(conditions)
-        where_str += " " + joined
-
         try:
-            sql = f"SELECT {"*" if not select else ", ".join(select)} FROM {self.name} {where_str if where else ""}"
+            sql = self._build_select(select, **where)
             cursor = self.db.run(sql)
             return cursor.fetchone()
+        except sqlite3.OperationalError as err:
+            raise LiteQLQueryError(err)
+
+    def find_many(self, select: None | list = None, **where) -> List[tuple | None]:
+        """Runs a SELECT SQL query with query paramaters and returns all matching results
+        
+        Args:
+            select: List of columns to retrieve
+            **where: Keys represent columns and valeus represent their values
+
+        Example:
+            >>> from liteql.operations import BETWEEN
+            >>> from datetime import date
+            >>> users_table.find_many(name="Jane", date_of_birth=BETWEEN(date(1987, 05, 24), date(2002, 11, 03)))
+            1
+        """
+
+        try:
+            sql = self._build_select(select, **where)
+            cursor = self.db.run(sql)
+            return cursor.fetchall()
         except sqlite3.OperationalError as err:
             raise LiteQLQueryError(err)
 
