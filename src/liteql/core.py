@@ -9,6 +9,27 @@ from .errors import LiteQLConnectionError, LiteQLQueryError
 from .attributes import LiteQLDatatype
 from .operations import _match_condition, LiteQLOperation
 
+class LiteQLQueryResult:
+    """Result object for the SQL query"""
+    def __init__(self, tuple: tuple, columns: list, _metadata: dict | None):
+        self.result = {}
+        self.metadata = _metadata or {}
+
+        for idx, col in enumerate(columns):
+            self.result[col] = tuple[idx]
+
+    def __str__(self):
+        return json.dumps(self.result, indent=2)
+
+    def __repr__(self):
+        return json.dumps(self.result, indent=2)
+
+    def __getattr__(self, name):
+        return self.metadata.get(name) or self.result.get(name)
+
+    def __getitem__(self, key):
+        return self.result.get(key)
+
 class LiteQLTable:
     """LiteQL table object"""
     def __init__(self, db: LiteQL, name: str, schema: dict):
@@ -44,11 +65,12 @@ class LiteQLTable:
         except sqlite3.OperationalError as err:
             raise LiteQLQueryError(err)
 
-    def update(self, conditions: List[LiteQLOperation] | None = None, **sets):
+    def update(self, conditions: List[LiteQLOperation] | None = None, allow_all: bool | None = False, **sets) -> Dict[str, int]:
         """Updates row in table with optionally specified conditions
         
         Args:
             conditions: List of LiteQLOperation conditions
+            allow_all: Allow to affect all rows if no conditions are passed (**DANGEROUS**)
             **sets: Keys represent columns and values represent their values to update to
 
         Example:
@@ -57,13 +79,7 @@ class LiteQLTable:
         """
 
         updates = []
-        cds = []
-        where_str = "WHERE"
-
-        if conditions:
-            for condition in conditions:
-                if isinstance(condition, LiteQLOperation):
-                    cds.append(str(condition))
+        where_str = self._build_conditions(conditions, allow_all)
 
         for key in sets:
             val = sets[key]
@@ -71,16 +87,49 @@ class LiteQLTable:
                 case str(): updates.append(f"{key} = '{val}'")
                 case int(): updates.append(f"{key} = {val}")
                 case float(): updates.append(f"{key} = {val}")
+                case LiteQLDatatype(): updates.append(f"{key} = {val.value}")
 
         update_sets = ", ".join(updates)
+        try:
+            sql = f"UPDATE {self.name} SET {update_sets} {where_str if conditions else ""}"
+            result = self.db.run(sql)
+
+            return {
+                "lastrowid": result.lastrowid,
+                "rowcount": result.rowcount
+            }
+        except sqlite3.OperationalError as err:
+            raise LiteQLQueryError(err)
+
+    def delete(self, conditions: List[LiteQLOperation] | None = None, allow_all: bool | None = False) -> Dict[str, int]:
+        where_str = self._build_conditions(conditions, allow_all)
+        try:
+            sql = f"DELETE FROM {self.name} {where_str if conditions else ""}"
+            result = self.db.run(sql)
+
+            return {
+                "lastrowid": result.lastrowid,
+                "rowcount": result.rowcount
+            }
+        except sqlite3.OperationalError as err:
+            raise LiteQLQueryError(err)
+
+    def _build_conditions(self, conditions, allow_all):
+        cds = []
+        where_str = "WHERE"
+
+        if conditions:
+            for condition in conditions:
+                if isinstance(condition, LiteQLOperation):
+                    cds.append(str(condition))
+        else:
+            if not allow_all:
+                raise LiteQLQueryError("Cannot affect rows without condition while allow_all is disabled")
+
         joined = " AND ".join(cds)
         where_str += " " + joined
 
-        try:
-            sql = f"UPDATE {self.name} SET {update_sets} {where_str if conditions else ""}"
-            self.db.run(sql)
-        except sqlite3.OperationalError as err:
-            raise LiteQLQueryError(err)
+        return where_str
 
     def _build_select(self, select, cds, **where):
         where_str = "WHERE"
@@ -101,7 +150,7 @@ class LiteQLTable:
         sql = f"SELECT {"*" if not select else ", ".join(select)} FROM {self.name} {where_str if where or cds else ""}"
         return sql
 
-    def find_one(self, select: None | list = None, conditions: List[LiteQLOperation] | None = None, **where) -> tuple | None:
+    def find_one(self, select: None | list = None, conditions: List[LiteQLOperation] | None = None, **where) -> LiteQLQueryResult | None:
         """Runs a SELECT SQL query with query paramaters and returns one result
         
         Args:
@@ -119,11 +168,15 @@ class LiteQLTable:
         try:
             sql = self._build_select(select, conditions, **where)
             cursor = self.db.run(sql)
-            return cursor.fetchone()
+
+            return LiteQLQueryResult(cursor.fetchone(), self.schema.keys(), {
+                "lastrowid": cursor.lastrowid,
+                "rowcount": cursor.rowcount
+            })
         except sqlite3.OperationalError as err:
             raise LiteQLQueryError(err)
 
-    def find_many(self, select: None | list = None, conditions: List[LiteQLOperation] | None = None, **where) -> List[tuple | None]:
+    def find_many(self, select: None | list = None, conditions: List[LiteQLOperation] | None = None, **where) -> List[LiteQLQueryResult | None]:
         """Runs a SELECT SQL query with query paramaters and returns all matching results
         
         Args:
@@ -141,7 +194,11 @@ class LiteQLTable:
         try:
             sql = self._build_select(select, conditions, **where)
             cursor = self.db.run(sql)
-            return cursor.fetchall()
+
+            return [LiteQLQueryResult(result, self.schema.keys(), {
+                "lastrowid": cursor.lastrowid,
+                "rowcount": cursor.rowcount
+            }) for result in cursor.fetchall()]
         except sqlite3.OperationalError as err:
             raise LiteQLQueryError(err)
 
@@ -277,6 +334,7 @@ class LiteQL:
             if new_cols:
                 for new_col in new_cols:
                     sql = f"ALTER TABLE {table_name} ADD COLUMN {new_col} {" ".join(str(attr) for attr in table_schema[new_col])}"
+                    print(sql)
                     self.run(sql)
         except sqlite3.OperationalError as err:
             raise LiteQLQueryError(err)

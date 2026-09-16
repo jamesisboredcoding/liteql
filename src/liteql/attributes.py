@@ -35,7 +35,42 @@ class VARCHAR(LiteQLDatatype):
     def __repr__(self):
         return f"VARVHAR({self.length})" if self.dialect is MYSQL else "VARCHAR"
 
+class DATE(LiteQLDatatype):
+    """Date object"""
+    def __str__(self):
+        return "DATE"
+
+    def __repr__(self):
+        return "DATE"
+
+# class DATE(LiteQLDatatype):
+#     """Date object"""
+#     def __init__(self, year: int, month: int, day: int):
+#         self.date = [year, month, day]
+
+#     def __str__(self):
+#         return f"DATE({", ".join(self.date)})"
+
+#     def __repr__(self):
+#         return f"DATE({", ".join(self.date)})"
+
 # Attributes
+
+class CURRENT_DATE:
+    """Current date object"""
+    def __str__(self):
+        return "CURRENT_DATE"
+
+    def __repr__(self):
+        return "CURENT_DATE"
+
+class CURRENT_TIMESTAMP:
+    """Current date object"""
+    def __str__(self):
+        return "CURRENT_TIMESTAMP"
+
+    def __repr__(self):
+        return "CURRENT_TIMESTAMP"
 
 class AUTO_INCREMENT:
     """Auto increments integer value"""
@@ -52,3 +87,14 @@ class NOTNULL:
 
     def __repr__(self):
         return "NOT NULL"
+
+class DEFAULT:
+    """Default value"""
+    def __init__(self, datatype: LiteQLDatatype):
+        self.dtype = datatype
+
+    def __str__(self):
+        return f"DEFAULT {self.dtype}"
+
+    def __repr__(self):
+        return f"DEFAULT {self.dtype}"

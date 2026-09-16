@@ -31,6 +31,7 @@ class NOT(LiteQLOperation):
         return f"NOT {self.op}"
 
 class RAW(LiteQLOperation):
+    _dont = True
     def __init__(self, **kwargs):
         self.conditions = kwargs
 

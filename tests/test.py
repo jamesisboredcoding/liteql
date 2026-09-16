@@ -9,7 +9,8 @@ users = db.create_table("users", {
     "id": [INT(), PRIMARY_KEY()],
     "name": [VARCHAR(), NOTNULL()],
     "email": [VARCHAR(), NOTNULL()],
-    "income": [INT()]
+    "income": [INT()],
+    "createdAt": [DATE(), DEFAULT(CURRENT_DATE())]
 })
 
 users.update(conditions=[RAW(name="John")], email="Specified", income=2500)
