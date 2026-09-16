@@ -45,7 +45,7 @@ class LiteQLTable:
         except sqlite3.OperationalError as err:
             raise LiteQLQueryError(err)
 
-    def find_one(self, select: None | list = None, **where) -> tuple:
+    def find_one(self, select: None | list = None, **where) -> tuple | None:
         """Runs a SELECT SQL query with query paramaters
         
         Args:
@@ -109,7 +109,7 @@ class LiteQL:
         try:
             dialect = _dialect(u.scheme)
         except ValueError:
-            raise LiteQLConnectionError(f"Unsupported databse: {u.schema}")
+            raise LiteQLConnectionError(f"Unsupported databse: {u.scheme}")
 
         if dialect is SQLITE:
             self.path = u.path[1:]
