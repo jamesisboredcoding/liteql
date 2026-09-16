@@ -7,7 +7,7 @@ from typing import Dict, List
 from .dialects import _dialect, SQLITE
 from .errors import LiteQLConnectionError, LiteQLQueryError
 from .attributes import LiteQLDatatype
-from .operations import LiteQLOperation, BETWEEN
+from .operations import _match_condition, LiteQLOperation
 
 class LiteQLTable:
     """LiteQL table object"""
@@ -44,29 +44,69 @@ class LiteQLTable:
         except sqlite3.OperationalError as err:
             raise LiteQLQueryError(err)
 
-    def _build_select(self, select, **where):
+    def update(self, conditions: List[LiteQLOperation] | None = None, **sets):
+        """Updates row in table with optionally specified conditions
+        
+        Args:
+            conditions: List of LiteQLOperation conditions
+            **sets: Keys represent columns and values represent their values to update to
+
+        Example:
+            >>> users_table.update(conditions=[RAW(name="John")], income=2500)
+            1
+        """
+
+        updates = []
+        cds = []
+        where_str = "WHERE"
+
+        if conditions:
+            for condition in conditions:
+                if isinstance(condition, LiteQLOperation):
+                    cds.append(str(condition))
+
+        for key in sets:
+            val = sets[key]
+            match val:
+                case str(): updates.append(f"{key} = '{val}'")
+                case int(): updates.append(f"{key} = {val}")
+                case float(): updates.append(f"{key} = {val}")
+
+        update_sets = ", ".join(updates)
+        joined = " AND ".join(cds)
+        where_str += " " + joined
+
+        try:
+            sql = f"UPDATE {self.name} SET {update_sets} {where_str if conditions else ""}"
+            self.db.run(sql)
+        except sqlite3.OperationalError as err:
+            raise LiteQLQueryError(err)
+
+    def _build_select(self, select, cds, **where):
         where_str = "WHERE"
         conditions = []
 
         for key in where:
             condition = where[key]
-            match condition:
-                case str(): conditions.append(f"{key} = '{condition}'")
-                case int(): conditions.append(f"{key} = {condition}")
-                case LiteQLOperation(): conditions.append(f"{key} {condition} {condition.value}")
-                case _: conditions.append(f"{key} {condition}")
+            conditions.append(_match_condition(key, condition))
+
+        if cds:
+            for condition in cds:
+                if isinstance(condition, LiteQLOperation):
+                    conditions.append(str(condition))
 
         joined = " AND ".join(conditions)
         where_str += " " + joined
 
-        sql = f"SELECT {"*" if not select else ", ".join(select)} FROM {self.name} {where_str if where else ""}"
+        sql = f"SELECT {"*" if not select else ", ".join(select)} FROM {self.name} {where_str if where or cds else ""}"
         return sql
 
-    def find_one(self, select: None | list = None, **where) -> tuple | None:
+    def find_one(self, select: None | list = None, conditions: List[LiteQLOperation] | None = None, **where) -> tuple | None:
         """Runs a SELECT SQL query with query paramaters and returns one result
         
         Args:
             select: List of columns to retrieve
+            conditions: LiteQLCondition objects
             **where: Keys represent columns and valeus represent their values
 
         Example:
@@ -77,17 +117,18 @@ class LiteQLTable:
         """
 
         try:
-            sql = self._build_select(select, **where)
+            sql = self._build_select(select, conditions, **where)
             cursor = self.db.run(sql)
             return cursor.fetchone()
         except sqlite3.OperationalError as err:
             raise LiteQLQueryError(err)
 
-    def find_many(self, select: None | list = None, **where) -> List[tuple | None]:
+    def find_many(self, select: None | list = None, conditions: List[LiteQLOperation] | None = None, **where) -> List[tuple | None]:
         """Runs a SELECT SQL query with query paramaters and returns all matching results
         
         Args:
             select: List of columns to retrieve
+            conditions: LiteQLCondition objects
             **where: Keys represent columns and valeus represent their values
 
         Example:
@@ -98,7 +139,7 @@ class LiteQLTable:
         """
 
         try:
-            sql = self._build_select(select, **where)
+            sql = self._build_select(select, conditions, **where)
             cursor = self.db.run(sql)
             return cursor.fetchall()
         except sqlite3.OperationalError as err:

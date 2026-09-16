@@ -6,3 +6,6 @@ class LiteQLConnectionError(LiteQLError):
 
 class LiteQLQueryError(LiteQLError):
     """Query failed to execute"""
+
+class LiteQLOperationError(LiteQLError):
+    """Failed to execute an operation"""
