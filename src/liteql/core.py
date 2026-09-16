@@ -47,6 +47,11 @@ class LiteQLTable:
     def __str__(self):
         return json.dumps(self.str_schema, indent=2)
 
+    def drop(self):
+        """Drops the table from the database
+        WARNING: Dropping the table is **NOT UNDOABLE**, do so at your own risk
+        """
+
     def insert(self, **fields) -> sqlite3.Cursor:
         """Inserts new row into table with specified data
         
@@ -229,7 +234,7 @@ class LiteQL:
         try:
             dialect = _dialect(u.scheme)
         except ValueError:
-            raise LiteQLConnectionError(f"Unsupported databse: {u.scheme}")
+            raise LiteQLConnectionError(f"Unsupported database: {u.scheme}")
 
         if dialect is SQLITE:
             self.path = u.path[1:]
